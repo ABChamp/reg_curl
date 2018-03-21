@@ -3,39 +3,49 @@
 require "vendor/autoload.php";
 require "simple_html_dom.php";
 use PHPHtmlParser\Dom;
-$collection = (new MongoDB\Client)->reg->teachers;
+$collection = (new MongoDB\Client('mongodb://172.17.0.4'))->reg->teachers;
 $results = run(2560,2);
 
 $results = preprocessCourses($results);
 
 foreach($results as &$result){
-    // remove some feature
-    unset($result['courseCode']);
-    unset($result['levelId']);
     unset($result['roomCode']);
-    foreach($result['teacher'] as &$teacher){
+    //$result['classId'] = $result['courseCode'];
+    //unset($result['courseCode']);
+    $counting = 0;
+    $c1 = count($result['teachers']);
+    $newTeachers = [];
+    foreach($result['teachers'] as &$teacher){
         $tmpTeacher = $teacher;
         $teacher = json_decode(json_encode($collection->findOne(['officerName'=>$teacher['officerName'],'officerSurname'=>$teacher['officerSurname']])),true);
         if($teacher){
-            // $teacher['money'] = 0
+            $teacher['point'] = 0;
+	        $teacher['percent'] = 0;
             unset($teacher['_id']);
             unset($teacher['updated_at']);
+	    array_push($newTeachers, $teacher);
         }else{
             echo "case:teacher";
             var_dump($tmpTeacher);
         }
     }
-    // foreach($result['enrollSeats'] as &$enrollSeat){
-    //    $enrollSeat['teacher'] = arrayMultiColumn($result['teacher'],['officerCode']);
-    // }
-    
+    $result['teachers'] = $newTeachers;
+    $c2 = count($result['teachers']);
+    echo($c1."-".$c2."\n");
+    /** foreach($result['enrollSeats'] as &$enrollSeat){
+        $enrollSeat['teacher'] = arrayMultiColumn($result['teacher'],['officerCode']);
+    } **/
 }
 // print_r(json_encode($results));
-// print_r($results);
-$collection = (new MongoDB\Client)->mis->workload_workteach_lecture_lab;
+/** $counting = 0;
+while($counting < 2){
+	print_r($results[$counting]);
+	$counting += 1;
+} **/
+
+$collection = (new MongoDB\Client('mongodb://172.17.0.4'))->mis->workload_workteach_lecture_lab;
 $insertManyResult = $collection->insertMany($results);
 printf("Inserted %d document(s)\n", $insertManyResult->getInsertedCount());
-
 function run($year,$semester){
     $dom = new Dom;
 
@@ -53,6 +63,7 @@ function run($year,$semester){
         $tds = $content->find('td');
 
         $url2  = 'http://reg.buu.ac.th/registrar/'.$tds[1]->find('a')->getAttribute('href');
+        
         $courseObj['courseId'] = intval(get_string_between($url2,'courseid=','&acadyear='));
         $dom2 = new simple_html_dom();
         $dom2->load_file($url2);
@@ -64,7 +75,8 @@ function run($year,$semester){
         if(count($lis) > 0){
             $teachers = '<li>'.$lis->innerHtml;
             // $teachers = refixNoise($teachers,'ขจัดภั','ขจัดภัย');
-            $teachers = removeNoise($teachers,['อาจารย์','MR.','ว่าที่เรือตรี','ศาสตราจารย์', 'ผู้ช่วยศาสตราจารย์ ดร.','รองศาสตราจารย์ ดร.','ผู้ช่วยศาสตราจารย์','รองศาสตราจารย์','ดร.','</li>', 'รอง', 'ผู้ช่วย']);
+            // $teachers = removeNoise($teachers,['อาจารย์','MR.','ว่าที่เรือตรี','ผู้ช่วยศาสตราจารย์ ดร.','รองศาสตราจารย์ ดร.','ผู้ช่วยศาสตราจารย์','รองศาสตราจารย์','ดร.','</li>']);
+	    $teachers = removeNoise($teachers,['อาจารย์','MR.','ว่าที่เรือตรี','ศาสตราจารย์', 'ผู้ช่วยศาสตราจารย์ ดร.','รองศาสตราจารย์ ดร.','ผู้ช่วยศาสตราจารย์','รองศาสตราจารย์','ดร.','</li>', 'รอง', 'ผู้ช่วย']);
             
             $teachers = splitTeacher($teachers);
         }
@@ -74,12 +86,13 @@ function run($year,$semester){
         $section = explode(' ',$tds[3]->innerHtml);//crepit(period)
         $periods = explode('-',$section[1]);
         $courseObj['credit'] = intval($section[0]);
-        
-        // $courseObj['period1'] = intval(substr($periods[0],1));
-        // $courseObj['period2'] = intval($periods[1]);
-        // $courseObj['period3'] = intval(substr($periods[2],0,-1));
-        $courseObj['periods'] = [intval(substr($periods[0],1)), intval($periods[1]), intval(substr($periods[2],0,-1))];
-        $courseObj['section']  = removeNoise($tds[5]->innerHtml,['&nbsp;']); // group
+        //$courseObj['period1'] = intval(substr($periods[0],1));
+        //$courseObj['period2'] = intval($periods[1]);
+        //$courseObj['period3'] = intval(substr($periods[2],0,-1));
+	$courseObj['periods'][0] = intval(substr($periods[0],1));
+	$courseObj['periods'][1] = intval($periods[1]);
+	$courseObj['periods'][2] = intval(substr($periods[2],0,-1));
+	$courseObj['section']  = removeNoise($tds[5]->innerHtml,['&nbsp;']); // group
         $courseObj['enrollSeat']  = intval(removeNoise($tds[7]->innerHtml,['&nbsp;'])); //enrollseat
 
         
@@ -103,10 +116,10 @@ function run($year,$semester){
                             'room'=>$time[2]];
         }
         $actual_group = "";
-        $degree='';
+        $levelName='';
         foreach($dom2->find('table[class="normaldetail"]')[1]->find('tr[bgcolor=#F5F5F5],tr[bgcolor=#F5f5f5],tr[bgcolor=#FFFFF0]') as  $sec){
             if($sec->bgcolor == '#FFFFF0'){
-                $degree =  $sec->find('td')[1]->find('font')[0]->plaintext;
+                $levelName =  $sec->find('td')[1]->find('font')[0]->plaintext;
                 continue;
             }
             $group = removeNoise($sec->find('td')[1]->plaintext,['<b>','</b>','&nbsp;']);
@@ -117,12 +130,11 @@ function run($year,$semester){
                 if(count($sec->find('td[colspan=5]'))==0){
                     $tmptd = $sec->find('td');
                     foreach($courseObj['times'] as &$time){
-                        // $courseObj['levelName'] = $levelName;
-                        $courseObj['degree'] = $degree;
-                        $courseObj['levelId'] = degreeNameToId($degree);
+                        $courseObj['levelName'] = $levelName;
+                        $courseObj['levelId'] = levelNameToId($levelName);
                         if((dateEngToThai($time['day']) == $tmptd[3]->plaintext) && ($time['startTime'].'-'.$time['finishTime'] == $tmptd[4]->plaintext)){
                             
-                            $time ['teachType'] = ($tmptd[7]->plaintext == 'C'?'lecture':($tmptd[7]->plaintext == 'L'?'lab':''));
+                            $time ['studyType'] = ($tmptd[7]->plaintext == 'C'?'lecture':($tmptd[7]->plaintext == 'L'?'lab':''));
                             $time ['day'] = dateEngToThaiNoi($time['day']);
                             break;
                         }
@@ -132,6 +144,7 @@ function run($year,$semester){
             
         }
         $courseObj['teachers'] = $teachers;
+        
         $courseArray[]=json_decode(json_encode($courseObj),true);
     }
     return $courseArray;
@@ -269,19 +282,20 @@ function preprocessCourses($courses){
         
         $tmpcourse = $courses[0];
         $tmpcourse['courseCodes'] = array_unique(array_column($courses,'courseCode'));
-        // $tmpcourse['enrollSeat'] = array_sum(array_column($courses,'enrollSeat'));
-        $tmpcourse['enrollSeats'] = array_column($courses,'enrollSeat');
-        // NEW
-        //$tmpcourse['section'] = implode(',',$tmpcourse['sections']);
-        // $tmpcourse['section'] = array_column($courses,'section');
+        $tmpcourse['enrollSeat'] = array_sum(array_column($courses,'enrollSeat'));
+        $tmpcourse['sections'] = array_column($courses,'section');
+        $tmpcourse['section'] = implode(',',$tmpcourse['sections']);
+	$tmpcourse['section'] = explode(',',$tmpcourse['section']);
         $tmpcourse['roomCode'] = $tmpcourse['time']['room'];
-        if(!isset($tmpcourse['time']['teachType'])){
+        if(!isset($tmpcourse['time']['studyType'])){
             echo "case:time";
             var_dump($courses[0]);
         }
-        $tmpcourse['teachType'] = $tmpcourse['time']['teachType']??'';
-        $tmpcourse['teacher'] = array_unique(mergeMultiArray(array_column($courses,'teachers')));
-        foreach($tmpcourse['teacher'] as &$teacher){
+        $tmpcourse['studyType'] = $tmpcourse['time']['studyType']??'';
+        // $tmpcourse['teacher'] = array_unique(mergeMultiArray(array_column($courses,'teachers')));
+	$tmpcourse['teachers'] = array_unique(mergeMultiArray(array_column($courses,'teachers')));
+
+        foreach($tmpcourse['teachers'] as &$teacher){
             $tmpTeacher = explode(" ",$teacher);
             while($tmpTeacher[0] == ""){
                 array_splice($tmpTeacher,0,1);
@@ -291,22 +305,30 @@ function preprocessCourses($courses){
             }
             $teacher = ['officerName'=>$tmpTeacher[0],'officerSurname'=>$tmpTeacher[1]];
         }
-        unset($tmpcourse['teachers']);
-        unset($tmpcourse['time']['teachType']);
+        // $tmpcourse['enrollSeats'] = arrayMultiColumn($courses,['enrollSeat','section','levelId','levelName']);
+	$tmpcourse['enrollSeats'] =  [];
+	$getEnrollSeat = arrayMultiColumn($courses, ['enrollSeat']);
+	foreach($getEnrollSeat as &$enrollSeat) {
+		array_push($tmpcourse['enrollSeats'], $enrollSeat['enrollSeat']);
+	}
+        
+        // unset($tmpcourse['teachers']);
+        unset($tmpcourse['teacher']);
+        unset($tmpcourse['time']['studyType']);
         unset($tmpcourse['time']['room']);
         unset($tmpcourse['time']['courseCode']);
-        // NEW
-        $tmpcourse['credits'] = ['lecture' => $tmpcourse['periods'][0], 'lab' => ($tmpcourse['credit'] - $tmpcourse['periods'][0])];
-
+	unset($tmpcourse['levelId']);
         //$tmpcourse['day'] = $tmpcourse['time']['day'];
-        // $tmpcourse['startTime'] = $tmpcourse['time']['startTime'];
-        // $tmpcourse['finishTime'] = $tmpcourse['time']['finishTime'];
+        //$tmpcourse['startTime'] = $tmpcourse['time']['startTime'];
+        //$tmpcourse['finishTime'] = $tmpcourse['time']['finishTime'];
         // $tmpcourse['creditLecture'] = $tmpcourse['period1'];
         // $tmpcourse['creditLab'] = $tmpcourse['creditLecture'] - $tmpcourse['creditLecture'];
-        
+	$tmpcourse['credits'] = array("lecture" => $tmpcourse['periods'][0], "lab" => $tmpcourse['credit'] - $tmpcourse['periods'][0]);
+
         //$tmpcourse['display'] = true;
         //$tmpcourse['canEdit'] = true;
         $tmpcourse['teachInEng'] = false;
+	$tmpcourse['canOver'] = false;
         
         $courseArrayByGroup[] = $tmpcourse;
 
@@ -325,6 +347,7 @@ function preprocessCourses($courses){
 
         $courses[] = $course;
     }
+
     $courseType = [
         302101,
         302102,
@@ -368,7 +391,7 @@ function arrayMultiColumn($arrays,$column){
         $columns = [];
         foreach($column as $key){
             if(!isset($array[$key])){
-                echo "case:degree:".$key;
+                echo "case:arrayMultiColumn:".$key."\n";
                 var_dump($arrays);
             }
             $columns[$key] = $array[$key]??'';
@@ -377,8 +400,8 @@ function arrayMultiColumn($arrays,$column){
     }
     return $result;
 }
-function degreeNameToId($degree){
-    switch ($degree) {
+function levelNameToId($levelName){
+    switch ($levelName) {
         case "ปริญญาตรี ปกติ":
           return 1;
           break;
