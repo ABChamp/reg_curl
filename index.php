@@ -190,7 +190,7 @@ function run($year,$semester){
                         $splitTeacher = explode(" ", $splitType[1]);
                         array_push($courseObj[$examKey[$key]], 
                             [
-                                'type' => $splitType[0],
+                                'type' => trim($splitType[0]),
                                 'officerName' => trim($splitTeacher[0]),
                                 'officerSurname' => trim($splitTeacher[1])
                             ]);
@@ -294,7 +294,7 @@ function dateEngToThaiNoi($day){
           return 'พฤ.';
           break;
         case 'FR':
-          return 'ศ';
+          return 'ศ.';
           break;
         case 'SA':
           return 'ส.';
