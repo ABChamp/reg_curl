@@ -23,15 +23,30 @@ foreach($results as &$result){
 	        $teacher['percent'] = 0;
             unset($teacher['_id']);
             unset($teacher['updated_at']);
-	    array_push($newTeachers, $teacher);
+	        array_push($newTeachers, $teacher);
         }else{
             echo "case:teacher";
             var_dump($tmpTeacher);
         }
     }
     $result['teachers'] = $newTeachers;
-    $c2 = count($result['teachers']);
-    echo($c1."-".$c2."\n");
+    // exam teacher
+    $examKey = ['midExamTeacher', 'finalExamTeacher'];
+    foreach($examKey as $ek) {
+        foreach($result[$ek] as &$examTeacher) {
+            $tmpTeacher = $examTeacher;
+            $examTeacher = json_decode(json_encode($collection->findOne(['officerName'=>$examTeacher['officerName'],'officerSurname'=>$examTeacher['officerSurname']])),true);
+            if($examTeacher){
+                // $examTeacher['money'] = 0
+                unset($examTeacher['_id']);
+                unset($examTeacher['updated_at']);
+            }else{
+                echo "case:examTeacher";
+                var_dump($tmpTeacher);
+            }
+        }
+    }
+
     /** foreach($result['enrollSeats'] as &$enrollSeat){
         $enrollSeat['teacher'] = arrayMultiColumn($result['teacher'],['officerCode']);
     } **/
@@ -43,9 +58,9 @@ while($counting < 2){
 	$counting += 1;
 } **/
 
-$collection = (new MongoDB\Client('mongodb://172.17.0.4'))->mis->workload_workteach_lecture_lab;
-$insertManyResult = $collection->insertMany($results);
-printf("Inserted %d document(s)\n", $insertManyResult->getInsertedCount());
+// $collection = (new MongoDB\Client('mongodb://172.17.0.4'))->mis->workload_workteach_lecture_lab;
+// $insertManyResult = $collection->insertMany($results);
+// printf("Inserted %d document(s)\n", $insertManyResult->getInsertedCount());
 function run($year,$semester){
     $dom = new Dom;
 
@@ -144,6 +159,45 @@ function run($year,$semester){
             
         }
         $courseObj['teachers'] = $teachers;
+        
+        // mine teacher in exam
+        $getTrs = $dom2->find('table[class="normaldetail"]')[1]->find('tr');
+        $countIdx = 0;
+        $leftArr = [];
+        // find tr by find align = left attribute
+        foreach($getTrs as $tr) {
+            $isLeft = $tr->getAttribute('align');
+            if($isLeft == "left") {
+                array_push($leftArr, $countIdx);
+            }
+            $countIdx += 1;
+        }
+
+        // mid exam
+        $examKey = ['midExamTeacher', 'finalExamTeacher'];
+        $courseObj[$examKey[0]] = [];
+        $courseObj[$examKey[1]] = [];
+        $examination = [4, 2];
+        foreach($examination as $key => $atTest) {
+            foreach($leftArr as $atMid) {
+                $midIdx = $atMid - $atTest;
+                $_midExamTeacher = $getTrs[$midIdx]->find('font')[0];
+                if ($_midExamTeacher->plaintext != "") {
+                    $rmTNoise = removeNoise($_midExamTeacher->plaintext,['อาจารย์','MR.','ว่าที่เรือตรี','ศาสตราจารย์', 'ผู้ช่วยศาสตราจารย์ ดร.','รองศาสตราจารย์ ดร.','ผู้ช่วยศาสตราจารย์','รองศาสตราจารย์','ดร.','</li>', 'รอง', 'ผู้ช่วย']);
+                    $allTeacher = explode("\n", preg_replace('/\s+:\s+/', ':',$rmTNoise));
+                    foreach($allTeacher as $tea) {
+                        $splitType = explode(":", $tea);
+                        $splitTeacher = explode(" ", $splitType[1]);
+                        array_push($courseObj[$examKey[$key]], 
+                            [
+                                'type' => $splitType[0],
+                                'officerName' => trim($splitTeacher[0]),
+                                'officerSurname' => trim($splitTeacher[1])
+                            ]);
+                    }
+                }
+            }
+        }
         
         $courseArray[]=json_decode(json_encode($courseObj),true);
     }
